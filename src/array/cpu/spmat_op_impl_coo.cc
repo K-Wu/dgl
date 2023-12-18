@@ -434,9 +434,13 @@ CSRMatrix UnSortedSparseCOOToCSR(const COOMatrix &coo) {
 
   // store sorted data and original index.
   NDArray sorted_data = NDArray::Empty({NNZ}, coo.row->dtype, coo.row->ctx);
-  NDArray sorted_data_pos = NDArray::Empty({NNZ}, coo.row->dtype, coo.row->ctx);
+  
+  // Hack: the maximal sorted_data_pos(i.e., Si) value is NNz - 1, which may overflow when the index type is int32_t though int32_t may be sufficient for number of nodes.
+  // We use int64_t for Si anyway to avoid overflow.
+  DGLDataType int64_dtype = DGLDataType{kDGLInt, 64, 1};
+  NDArray sorted_data_pos = NDArray::Empty({NNZ}, int64_dtype, coo.row->ctx);
   IdType *const Sx = static_cast<IdType *>(sorted_data->data);
-  IdType *const Si = static_cast<IdType *>(sorted_data_pos->data);
+  int64_t *const Si = static_cast<int64_t *>(sorted_data_pos->data);
 
   // Lower number of threads if cost of parallelization is grater than gain
   // from making calculation parallel.

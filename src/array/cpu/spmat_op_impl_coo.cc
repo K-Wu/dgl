@@ -423,8 +423,11 @@ CSRMatrix UnSortedSparseCOOToCSR(const COOMatrix &coo) {
   const IdType *const data =
       COOHasData(coo) ? static_cast<IdType *>(coo.data->data) : nullptr;
 
+  // Hack: the maximal ret_indptr value is NNz, which may overflow when the index type is int32_t though int32_t may be sufficient for number of nodes.
+  // We use int64_t for Si anyway to avoid overflow.
+  DGLDataType int64_dtype = DGLDataType{kDGLInt, 64, 1};
   NDArray ret_indptr = NDArray::Empty(
-      {static_cast<int64_t>(N) + 1}, coo.row->dtype, coo.row->ctx);
+      {static_cast<int64_t>(N) + 1}, int64_dtype, coo.row->ctx);
   NDArray ret_indices = NDArray::Empty({NNZ}, coo.row->dtype, coo.row->ctx);
   NDArray ret_data = NDArray::Empty({NNZ}, coo.row->dtype, coo.row->ctx);
   IdType *const Bp = static_cast<IdType *>(ret_indptr->data);
@@ -437,7 +440,6 @@ CSRMatrix UnSortedSparseCOOToCSR(const COOMatrix &coo) {
   
   // Hack: the maximal sorted_data_pos(i.e., Si) value is NNz - 1, which may overflow when the index type is int32_t though int32_t may be sufficient for number of nodes.
   // We use int64_t for Si anyway to avoid overflow.
-  DGLDataType int64_dtype = DGLDataType{kDGLInt, 64, 1};
   NDArray sorted_data_pos = NDArray::Empty({NNZ}, int64_dtype, coo.row->ctx);
   IdType *const Sx = static_cast<IdType *>(sorted_data->data);
   int64_t *const Si = static_cast<int64_t *>(sorted_data_pos->data);

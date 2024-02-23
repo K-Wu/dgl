@@ -376,7 +376,7 @@ class DistGraphServer(KVServer):
                 ntypes,
                 etypes,
             ) = load_partition(part_config, self.part_id, load_feats=False)
-            print("load " + graph_name)
+            print("load " + graph_name, flush = True)
             # formatting dtype
             # TODO(Rui) Formatting forcely is not a perfect solution.
             #   We'd better store all dtypes when mapping to shared memory
@@ -393,11 +393,11 @@ class DistGraphServer(KVServer):
             # Create the graph formats specified the users.
             print(
                 "Start to create specified graph formats which may take "
-                "non-trivial time."
+                "non-trivial time.", flush = True
             )
             self.client_g = self.client_g.formats(graph_format)
             self.client_g.create_formats_()
-            print("Finished creating specified graph formats.")
+            print("Finished creating specified graph formats.", flush = True)
             if not disable_shared_mem:
                 self.client_g = _copy_graph_to_shared_mem(
                     self.client_g, graph_name, graph_format
@@ -405,6 +405,7 @@ class DistGraphServer(KVServer):
 
         if not disable_shared_mem:
             self.gpb.shared_memory(graph_name)
+            print("gpb.shared_memory done", graph_name, flush = True)
         assert self.gpb.partid == self.part_id
         for ntype in ntypes:
             node_name = HeteroDataName(True, ntype, "")
@@ -466,7 +467,7 @@ class DistGraphServer(KVServer):
         print(
             "start graph service on server {} for part {}".format(
                 self.server_id, self.part_id
-            )
+            ), flush = True
         )
         start_server(
             server_id=self.server_id,
@@ -624,6 +625,8 @@ class DistGraph:
         self._gpb = get_shared_mem_partition_book(self.graph_name)
         if self._gpb is None:
             self._gpb = gpb
+        print("_g after get_shared_mem_partition_book", self.graph_name, self._g, flush = True)
+        print("_gpb after get_shared_mem_partition_book", self.graph_name, self._gpb, flush = True)
         self._client.map_shared_data(self._gpb)
 
     def _init_ndata_store(self):
@@ -1367,6 +1370,7 @@ class DistGraph:
         replace=False,
         etype_sorted=True,
         output_device=None,
+        return_timing = False,
     ):
         # pylint: disable=unused-argument
         """Sample neighbors from a distributed graph."""
@@ -1378,10 +1382,11 @@ class DistGraph:
                 replace=replace,
                 etype_sorted=etype_sorted,
                 prob=prob,
+                return_timing = return_timing
             )
         else:
             frontier = graph_services.sample_neighbors(
-                self, seed_nodes, fanout, replace=replace, prob=prob
+                self, seed_nodes, fanout, replace=replace, prob=prob, return_timing = return_timing
             )
         return frontier
 

@@ -38,16 +38,17 @@ ETYPE_SAMPLING_SERVICE_ID = 6662
 class SubgraphResponse(Response):
     """The response for sampling and in_subgraph"""
 
-    def __init__(self, global_src, global_dst, global_eids):
+    def __init__(self, global_src, global_dst, global_eids, times=None):
         self.global_src = global_src
         self.global_dst = global_dst
         self.global_eids = global_eids
+        self.times = times
 
     def __setstate__(self, state):
-        self.global_src, self.global_dst, self.global_eids = state
+        self.global_src, self.global_dst, self.global_eids, self.times = state
 
     def __getstate__(self):
-        return self.global_src, self.global_dst, self.global_eids
+        return self.global_src, self.global_dst, self.global_eids, self.times
 
 
 class FindEdgeResponse(Response):
@@ -66,7 +67,7 @@ class FindEdgeResponse(Response):
 
 
 def _sample_neighbors(
-    local_g, partition_book, seed_nodes, fan_out, edge_dir, prob, replace
+    local_g, partition_book, seed_nodes, fan_out, edge_dir, prob, replace, return_timing=False
 ):
     """Sample from local partition.
 
@@ -78,7 +79,7 @@ def _sample_neighbors(
     local_ids = partition_book.nid2localnid(seed_nodes, partition_book.partid)
     local_ids = F.astype(local_ids, local_g.idtype)
     # local_ids = self.seed_nodes
-    sampled_graph = local_sample_neighbors(
+    results = local_sample_neighbors(
         local_g,
         local_ids,
         fan_out,
@@ -86,14 +87,22 @@ def _sample_neighbors(
         prob,
         replace,
         _dist_training=True,
+        return_timing=return_timing,
     )
+    if return_timing:
+        sampled_graph, times = results
+    else:
+        sampled_graph = results
     global_nid_mapping = local_g.ndata[NID]
     src, dst = sampled_graph.edges()
     global_src, global_dst = F.gather_row(
         global_nid_mapping, src
     ), F.gather_row(global_nid_mapping, dst)
     global_eids = F.gather_row(local_g.edata[EID], sampled_graph.edata[EID])
-    return global_src, global_dst, global_eids
+    if return_timing:
+        return global_src, global_dst, global_eids, times
+    else:
+        return global_src, global_dst, global_eids
 
 
 def _sample_etype_neighbors(
@@ -106,6 +115,7 @@ def _sample_etype_neighbors(
     prob,
     replace,
     etype_sorted=False,
+    return_timing=False,
 ):
     """Sample from local partition.
 
@@ -117,7 +127,7 @@ def _sample_etype_neighbors(
     local_ids = partition_book.nid2localnid(seed_nodes, partition_book.partid)
     local_ids = F.astype(local_ids, local_g.idtype)
 
-    sampled_graph = local_sample_etype_neighbors(
+    results = local_sample_etype_neighbors(
         local_g,
         local_ids,
         etype_offset,
@@ -127,14 +137,22 @@ def _sample_etype_neighbors(
         replace,
         etype_sorted=etype_sorted,
         _dist_training=True,
+        return_timing=return_timing,
     )
+    if return_timing:
+        sampled_graph, times = results
+    else:
+        sampled_graph = results
     global_nid_mapping = local_g.ndata[NID]
     src, dst = sampled_graph.edges()
     global_src, global_dst = F.gather_row(
         global_nid_mapping, src
     ), F.gather_row(global_nid_mapping, dst)
     global_eids = F.gather_row(local_g.edata[EID], sampled_graph.edata[EID])
-    return global_src, global_dst, global_eids
+    if return_timing:
+        return global_src, global_dst, global_eids, times
+    else:
+        return global_src, global_dst, global_eids
 
 
 def _find_edges(local_g, partition_book, seed_edges):
@@ -208,16 +226,17 @@ def _in_subgraph(local_g, partition_book, seed_nodes):
 # This is a limitation of the current DistDGL design.  We should improve it
 # later.
 
-
+# TODO: add times to SubgraphResponse
 class SamplingRequest(Request):
     """Sampling Request"""
 
-    def __init__(self, nodes, fan_out, edge_dir="in", prob=None, replace=False):
+    def __init__(self, nodes, fan_out, edge_dir="in", prob=None, replace=False, return_timing=False):
         self.seed_nodes = nodes
         self.edge_dir = edge_dir
         self.prob = prob
         self.replace = replace
         self.fan_out = fan_out
+        self.return_timing = return_timing
 
     def __setstate__(self, state):
         (
@@ -226,6 +245,7 @@ class SamplingRequest(Request):
             self.prob,
             self.replace,
             self.fan_out,
+            self.return_timing
         ) = state
 
     def __getstate__(self):
@@ -235,6 +255,7 @@ class SamplingRequest(Request):
             self.prob,
             self.replace,
             self.fan_out,
+            self.return_timing
         )
 
     def process_request(self, server_state):
@@ -245,7 +266,7 @@ class SamplingRequest(Request):
             prob = [kv_store.data_store[self.prob]]
         else:
             prob = None
-        global_src, global_dst, global_eids = _sample_neighbors(
+        results = _sample_neighbors(
             local_g,
             partition_book,
             self.seed_nodes,
@@ -253,8 +274,14 @@ class SamplingRequest(Request):
             self.edge_dir,
             prob,
             self.replace,
+            self.return_timing
         )
-        return SubgraphResponse(global_src, global_dst, global_eids)
+        if self.return_timing:
+            global_src, global_dst, global_eids, times = results
+            return SubgraphResponse(global_src, global_dst, global_eids, times)
+        else:
+            global_src, global_dst, global_eids = results
+            return SubgraphResponse(global_src, global_dst, global_eids)
 
 
 class SamplingRequestEtype(Request):
@@ -268,6 +295,7 @@ class SamplingRequestEtype(Request):
         prob=None,
         replace=False,
         etype_sorted=True,
+        return_timing=False,
     ):
         self.seed_nodes = nodes
         self.edge_dir = edge_dir
@@ -275,6 +303,7 @@ class SamplingRequestEtype(Request):
         self.replace = replace
         self.fan_out = fan_out
         self.etype_sorted = etype_sorted
+        self.return_timing = return_timing
 
     def __setstate__(self, state):
         (
@@ -284,6 +313,7 @@ class SamplingRequestEtype(Request):
             self.replace,
             self.fan_out,
             self.etype_sorted,
+            self.return_timing
         ) = state
 
     def __getstate__(self):
@@ -294,6 +324,7 @@ class SamplingRequestEtype(Request):
             self.replace,
             self.fan_out,
             self.etype_sorted,
+            self.return_timing
         )
 
     def process_request(self, server_state):
@@ -309,7 +340,7 @@ class SamplingRequestEtype(Request):
             ]
         else:
             probs = None
-        global_src, global_dst, global_eids = _sample_etype_neighbors(
+        results = _sample_etype_neighbors(
             local_g,
             partition_book,
             self.seed_nodes,
@@ -319,8 +350,14 @@ class SamplingRequestEtype(Request):
             probs,
             self.replace,
             self.etype_sorted,
+            self.return_timing
         )
-        return SubgraphResponse(global_src, global_dst, global_eids)
+        if self.return_timing:
+            global_src, global_dst, global_eids, times = results
+            return SubgraphResponse(global_src, global_dst, global_eids, times)
+        else:
+            global_src, global_dst, global_eids = results
+            return SubgraphResponse(global_src, global_dst, global_eids)
 
 
 class EdgesRequest(Request):
@@ -436,9 +473,10 @@ class InSubgraphRequest(Request):
         )
         return SubgraphResponse(global_src, global_dst, global_eids)
 
-
+# TODO: add times to SubgraphResponse
 def merge_graphs(res_list, num_nodes):
     """Merge request from multiple servers"""
+    times = [0.0, 0.0]
     if len(res_list) > 1:
         srcs = []
         dsts = []
@@ -447,6 +485,9 @@ def merge_graphs(res_list, num_nodes):
             srcs.append(res.global_src)
             dsts.append(res.global_dst)
             eids.append(res.global_eids)
+            if res.times is not None: # TODO: check if it is None 
+                times[0] += res.times[0]
+                times[1] += res.times[1]
         src_tensor = F.cat(srcs, 0)
         dst_tensor = F.cat(dsts, 0)
         eid_tensor = F.cat(eids, 0)
@@ -454,9 +495,15 @@ def merge_graphs(res_list, num_nodes):
         src_tensor = res_list[0].global_src
         dst_tensor = res_list[0].global_dst
         eid_tensor = res_list[0].global_eids
+        if res_list[0].times is not None: # TODO: check if it is None 
+            times[0] += res_list[0].times[0]
+            times[1] += res_list[0].times[1]
     g = graph((src_tensor, dst_tensor), num_nodes=num_nodes)
     g.edata[EID] = eid_tensor
-    return g
+    if res_list[0].times is not None:
+        return g, times
+    else:
+        return g
 
 
 LocalSampledGraph = namedtuple(
@@ -464,7 +511,11 @@ LocalSampledGraph = namedtuple(
 )
 
 
-def _distributed_access(g, nodes, issue_remote_req, local_access):
+LocalSampledGraphWithTimes = namedtuple(
+    "LocalSampledGraph", "global_src global_dst global_eids times"
+)
+
+def _distributed_access(g, nodes, issue_remote_req, local_access, return_timing=False):
     """A routine that fetches local neighborhood of nodes from the distributed graph.
 
     The local neighborhood of some nodes are stored in the local machine and the other
@@ -515,18 +566,28 @@ def _distributed_access(g, nodes, issue_remote_req, local_access):
     # sample neighbors for the nodes in the local partition.
     res_list = []
     if local_nids is not None:
-        src, dst, eids = local_access(
+        results = local_access(
             g.local_partition, partition_book, local_nids
         )
-        res_list.append(LocalSampledGraph(src, dst, eids))
+        if return_timing:
+            src, dst, eids, times = results
+            res_list.append(LocalSampledGraphWithTimes(src, dst, eids, times))
+        else:
+            src, dst, eids = results
+            res_list.append(LocalSampledGraph(src, dst, eids))
 
     # receive responses from remote machines.
     if msgseq2pos is not None:
         results = recv_responses(msgseq2pos)
         res_list.extend(results)
 
-    sampled_graph = merge_graphs(res_list, g.num_nodes())
-    return sampled_graph
+    results = merge_graphs(res_list, g.num_nodes())
+    if return_timing:
+        sampled_graph, times = results
+        return sampled_graph, times
+    else:
+        sampled_graph = results
+        return sampled_graph
 
 
 def _frontier_to_heterogeneous_graph(g, frontier, gpb):
@@ -578,6 +639,7 @@ def sample_etype_neighbors(
     prob=None,
     replace=False,
     etype_sorted=True,
+    return_timing=False,
 ):
     """Sample from the neighbors of the given nodes from a distributed graph.
 
@@ -688,6 +750,7 @@ def sample_etype_neighbors(
             prob=_prob,
             replace=replace,
             etype_sorted=etype_sorted,
+            return_timing=return_timing
         )
 
     def local_access(local_g, partition_book, local_nids):
@@ -712,16 +775,25 @@ def sample_etype_neighbors(
             _prob,
             replace,
             etype_sorted=etype_sorted,
+            return_timing=return_timing,
         )
+    
+    results = _distributed_access(g, nodes, issue_remote_req, local_access, return_timing=return_timing)
+    if return_timing:
+        frontier, times = results
+    else:
+        frontier = results
 
-    frontier = _distributed_access(g, nodes, issue_remote_req, local_access)
     if not gpb.is_homogeneous:
-        return _frontier_to_heterogeneous_graph(g, frontier, gpb)
+        frontier = _frontier_to_heterogeneous_graph(g, frontier, gpb)
+
+    if return_timing:
+        return frontier, times
     else:
         return frontier
 
 
-def sample_neighbors(g, nodes, fanout, edge_dir="in", prob=None, replace=False):
+def sample_neighbors(g, nodes, fanout, edge_dir="in", prob=None, replace=False, return_timing=False):
     """Sample from the neighbors of the given nodes from a distributed graph.
 
     For each node, a number of inbound (or outbound when ``edge_dir == 'out'``) edges
@@ -809,11 +881,18 @@ def sample_neighbors(g, nodes, fanout, edge_dir="in", prob=None, replace=False):
             edge_dir,
             _prob,
             replace,
+            return_timing
         )
 
-    frontier = _distributed_access(g, nodes, issue_remote_req, local_access)
+    results = _distributed_access(g, nodes, issue_remote_req, local_access, return_timing=return_timing)
+    if return_timing:
+        frontier, times = results
+    else:
+        frontier = results
     if not gpb.is_homogeneous:
-        return _frontier_to_heterogeneous_graph(g, frontier, gpb)
+        frontier =  _frontier_to_heterogeneous_graph(g, frontier, gpb)
+    if return_timing:
+        return frontier, times
     else:
         return frontier
 
@@ -958,7 +1037,7 @@ def in_subgraph(g, nodes):
     def local_access(local_g, partition_book, local_nids):
         return _in_subgraph(local_g, partition_book, local_nids)
 
-    return _distributed_access(g, nodes, issue_remote_req, local_access)
+    return _distributed_access(g, nodes, issue_remote_req, local_access, return_timing=return_timing)
 
 
 def _distributed_get_node_property(g, n, issue_remote_req, local_access):

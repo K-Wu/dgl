@@ -210,6 +210,7 @@ def load_partition(part_config, part_id, load_feats=True):
     ), "the partition graph should contain edge mapping to global edge ID"
 
     gpb, graph_name, ntypes, etypes = load_partition_book(part_config, part_id)
+    print("gpb in load_partition", gpb, flush=True)
     ntypes_list = list(ntypes.keys())
     etypes_list = list(etypes.keys())
     if "DGL_DIST_DEBUG" in os.environ:

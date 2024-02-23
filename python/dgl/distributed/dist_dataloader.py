@@ -138,6 +138,8 @@ class DistDataLoader:
         return self
 
     def _request_next_batch(self):
+        # TODO: sampling and aggregation. If there is a sampler pool, the job is submitted and done asynchronously by the sampler process. However, we do not use any sampler process for now.
+        assert self.pool is None
         next_data = self._next_data()
         if next_data is None:
             return

@@ -196,6 +196,7 @@ def get_shared_mem_partition_book(graph_name):
         A graph partition book for a particular partition.
     """
     if not exist_shared_mem_array(_get_ndata_path(graph_name, "meta")):
+        print("No shared memory for the graph partition book.", flush=True)
         return None
     (
         is_range_part,

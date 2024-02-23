@@ -265,17 +265,25 @@ def initialize(
         formats = [f.strip() for f in formats]
         rpc.reset()
         keep_alive = bool(int(os.environ.get("DGL_KEEP_ALIVE", 0)))
+        import time
+        start = time.time()
         serv = DistGraphServer(
             int(os.environ.get("DGL_SERVER_ID")),
             os.environ.get("DGL_IP_CONFIG"),
             int(os.environ.get("DGL_NUM_SERVER")),
             int(os.environ.get("DGL_NUM_CLIENT")),
             os.environ.get("DGL_CONF_PATH"),
+            disable_shared_mem=False,
             graph_format=formats,
             keep_alive=keep_alive,
             net_type=net_type,
         )
         serv.start()
+        print(
+            "Server {} started in {} seconds".format(
+                os.environ.get("DGL_SERVER_ID"), time.time() - start
+            )
+        )
         sys.exit()
     else:
         num_workers = int(os.environ.get("DGL_NUM_SAMPLER", 0))
@@ -303,6 +311,9 @@ def initialize(
         else:
             SAMPLER_POOL = None
         NUM_SAMPLER_WORKERS = num_workers
+        # if os.environ.get("DGL_CONF_PATH") is None or os.environ.get("DGL_CONF_PATH").find("igb") !=-1:
+        #     import time
+        #     time.sleep(300) # Wait for server to start
         if not is_standalone:
             assert (
                 num_servers is not None and num_servers > 0

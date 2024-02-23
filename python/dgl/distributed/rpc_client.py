@@ -195,7 +195,7 @@ def connect_to_server(
                 print(
                     "Client is trying to connect server receiver: {}:{}".format(
                         server_ip, server_port
-                    )
+                    ), flush = True
                 )
             if try_times >= max_try_times:
                 raise rpc.DistConnectError(
@@ -216,14 +216,14 @@ def connect_to_server(
         client_ip, client_port, num_servers, blocking=net_type == "socket"
     )
     print(
-        "Client [{}] waits on {}:{}".format(os.getpid(), client_ip, client_port)
+        "Client [{}] waits on {}:{}".format(os.getpid(), client_ip, client_port), flush = True
     )
     # recv client ID from server
     res = rpc.recv_response()
     rpc.set_rank(res.client_id)
     print(
         "Machine (%d) group (%d) client (%d) connect to server successfuly!"
-        % (machine_id, group_id, rpc.get_rank())
+        % (machine_id, group_id, rpc.get_rank()), flush = True
     )
     # get total number of client
     get_client_num_req = rpc.GetNumberClientsRequest(rpc.get_rank())

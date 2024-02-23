@@ -187,7 +187,7 @@ def partition_graph_with_halo(g, node_part, extra_cached_hops, reshuffle=False):
     )
     # g is no longer needed. Free memory.
     g = None
-    print("Split the graph: {:.3f} seconds".format(time.time() - start))
+    print("Split the graph: {:.3f} seconds".format(time.time() - start), flush=True)
     subg_dict = {}
     node_part = node_part.tousertensor()
     start = time.time()
@@ -251,7 +251,7 @@ def partition_graph_with_halo(g, node_part, extra_cached_hops, reshuffle=False):
             inner_edge = F.ones((subg.num_edges(),), F.int8, F.cpu())
         subg.edata["inner_edge"] = inner_edge
         subg_dict[i] = subg
-    print("Construct subgraphs: {:.3f} seconds".format(time.time() - start))
+    print("Construct subgraphs: {:.3f} seconds".format(time.time() - start), flush=True)
     if reshuffle:
         return subg_dict, orig_nids, orig_eids
     else:

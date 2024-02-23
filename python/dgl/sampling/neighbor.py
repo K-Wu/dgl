@@ -9,6 +9,9 @@ from .._ffi.function import _init_api
 from ..base import DGLError, EID
 from ..heterograph import DGLBlock, DGLGraph
 from .utils import EidExcluder
+import time
+import socket
+host_name = socket.gethostname()
 
 __all__ = [
     "sample_etype_neighbors",
@@ -77,6 +80,7 @@ def sample_etype_neighbors(
     etype_sorted=False,
     _dist_training=False,
     output_device=None,
+    return_timing=False
 ):
     """Sample neighboring edges of the given nodes and return the induced subgraph.
 
@@ -151,6 +155,7 @@ def sample_etype_neighbors(
     As a result, users should avoid performing in-place operations
     on the node features of the new graph to avoid feature corruption.
     """
+    start = time.time()
     if g.device != F.cpu():
         raise DGLError("The graph should be in cpu.")
     # (BarclayII) because the homogenized graph no longer contains the *name* of edge
@@ -183,6 +188,7 @@ def sample_etype_neighbors(
     )
     induced_edges = subgidx.induced_edges
     ret = DGLGraph(subgidx.graph, g.ntypes, g.etypes)
+    tik = time.time()
 
     # handle features
     # (TODO) (BarclayII) DGL distributed fails with bus error, freezes, or other
@@ -200,8 +206,14 @@ def sample_etype_neighbors(
     else:
         for i, etype in enumerate(ret.canonical_etypes):
             ret.edges[etype].data[EID] = induced_edges[i]
+    tok = time.time()
 
-    return ret if output_device is None else ret.to(output_device)
+    ret_val = ret if output_device is None else ret.to(output_device)
+
+    if return_timing:
+        return ret_val, (tok - tik, tik - start)
+    else:
+        return ret_val
 
 
 DGLGraph.sample_etype_neighbors = utils.alias_func(sample_etype_neighbors)
@@ -219,6 +231,7 @@ def sample_neighbors(
     _dist_training=False,
     exclude_edges=None,
     output_device=None,
+    return_timing=False
 ):
     """Sample neighboring edges of the given nodes and return the induced subgraph.
 
@@ -356,7 +369,7 @@ def sample_neighbors(
 
     """
     if F.device_type(g.device) == "cpu" and not g.is_pinned():
-        frontier = _sample_neighbors(
+        results = _sample_neighbors(
             g,
             nodes,
             fanout,
@@ -366,9 +379,14 @@ def sample_neighbors(
             copy_ndata=copy_ndata,
             copy_edata=copy_edata,
             exclude_edges=exclude_edges,
+            return_timing=return_timing,
         )
+        if return_timing:
+            frontier, times = results
+        else:
+            frontier = results
     else:
-        frontier = _sample_neighbors(
+        results = _sample_neighbors(
             g,
             nodes,
             fanout,
@@ -377,11 +395,20 @@ def sample_neighbors(
             replace=replace,
             copy_ndata=copy_ndata,
             copy_edata=copy_edata,
+            return_timing=return_timing,
         )
+        if return_timing:
+            frontier, times = results
+        else:
+            frontier = results
         if exclude_edges is not None:
             eid_excluder = EidExcluder(exclude_edges)
             frontier = eid_excluder(frontier)
-    return frontier if output_device is None else frontier.to(output_device)
+    ret = frontier if output_device is None else frontier.to(output_device)
+    if return_timing:
+        return ret, times
+    else:
+        return ret
 
 
 def sample_neighbors_fused(
@@ -395,6 +422,7 @@ def sample_neighbors_fused(
     copy_edata=True,
     exclude_edges=None,
     mapping=None,
+    return_timing=False,
 ):
     """Sample neighboring edges of the given nodes and return the induced subgraph.
 
@@ -484,6 +512,7 @@ def sample_neighbors_fused(
             exclude_edges=exclude_edges,
             fused=True,
             mapping=mapping,
+            return_timing=return_timing,
         )
     else:
         frontier = _sample_neighbors(
@@ -497,6 +526,7 @@ def sample_neighbors_fused(
             copy_edata=copy_edata,
             fused=True,
             mapping=mapping,
+            return_timing=return_timing,
         )
         if exclude_edges is not None:
             eid_excluder = EidExcluder(exclude_edges)
@@ -517,7 +547,9 @@ def _sample_neighbors(
     exclude_edges=None,
     fused=False,
     mapping=None,
+    return_timing=False,
 ):
+    start = time.time()
     if not isinstance(nodes, dict):
         if len(g.ntypes) > 1:
             raise DGLError(
@@ -631,7 +663,7 @@ def _sample_neighbors(
         )
         ret = DGLGraph(subgidx.graph, g.ntypes, g.etypes)
         induced_edges = subgidx.induced_edges
-
+    tic = time.time()
     # handle features
     # (TODO) (BarclayII) DGL distributed fails with bus error, freezes, or other
     # incomprehensible errors with lazy feature copy.
@@ -667,8 +699,14 @@ def _sample_neighbors(
     else:
         for i, etype in enumerate(ret.canonical_etypes):
             ret.edges[etype].data[EID] = induced_edges[i]
-
-    return ret
+    tok = time.time()
+    # from ..distributed.dist_graph import DistGraph
+    # if isinstance(g, DistGraph):
+    # print(f"{host_name} {g.rank()}: [_sample_neighbors] {type(g)} sample_neighbors time: {tok-start}, aggregation time: {tok-tic}", flush=True)
+    if return_timing:
+        return ret, (tok - tic, tic - start)
+    else:
+        return ret
 
 
 DGLGraph.sample_neighbors = utils.alias_func(sample_neighbors)

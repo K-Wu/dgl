@@ -2,9 +2,12 @@
 from .. import backend as F
 from ..base import EID, NID
 from ..heterograph import DGLGraph
+from ..distributed.dist_graph import DistGraph
 from ..transforms import to_block
 from .base import BlockSampler
-
+import time
+import socket
+host_name = socket.gethostname()
 
 class NeighborSampler(BlockSampler):
     """Sampler that builds computational dependency of node representations via
@@ -146,6 +149,13 @@ class NeighborSampler(BlockSampler):
         self.fused = fused
         self.mapping = {}
         self.g = None
+        self.print_times = False
+
+    def set_print_times(self):
+        self.print_times=True
+    
+    def reset_print_times(self):
+        self.print_times=False
 
     def sample_blocks(self, g, seed_nodes, exclude_eids=None):
         output_nodes = seed_nodes
@@ -180,8 +190,11 @@ class NeighborSampler(BlockSampler):
                     blocks.insert(0, block)
                 return seed_nodes, output_nodes, blocks
 
+        sampling_times = []
+        aggregation_times = []
         for fanout in reversed(self.fanouts):
-            frontier = g.sample_neighbors(
+            start = time.time()
+            frontier, times = g.sample_neighbors(
                 seed_nodes,
                 fanout,
                 edge_dir=self.edge_dir,
@@ -189,13 +202,19 @@ class NeighborSampler(BlockSampler):
                 replace=self.replace,
                 output_device=self.output_device,
                 exclude_edges=exclude_eids,
+                return_timing=True,
             )
+            tic = time.time()
             eid = frontier.edata[EID]
             block = to_block(frontier, seed_nodes)
             block.edata[EID] = eid
+            tok = time.time()
+            sampling_times.append(times[0])
+            aggregation_times.append(tok - tic + times[1])
             seed_nodes = block.srcdata[NID]
             blocks.insert(0, block)
-
+        if isinstance(g, DistGraph) and self.print_times:
+            print(f"{host_name} {g.rank()}: [sample_blocks] sampling_neighbors: {times[0]:.6f} sec, aggregation: {sum(aggregation_times):.6f} sec")
         return seed_nodes, output_nodes, blocks
 
 

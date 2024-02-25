@@ -7,6 +7,9 @@ __all__ = ["DistDataLoader"]
 
 DATALOADER_ID = 0
 
+import time
+import socket
+host_name = socket.gethostname()
 
 class DistDataLoader:
     """DGL customized multiprocessing dataloader.
@@ -95,9 +98,17 @@ class DistDataLoader:
         global DATALOADER_ID
         self.name = "dataloader-" + str(DATALOADER_ID)
         DATALOADER_ID += 1
+        self.print_times=False
 
         if self.pool is not None:
             self.pool.set_collate_fn(self.collate_fn, self.name)
+    
+    def set_print_times(self, g_rank):
+        self.print_times=True
+        self.g_rank=g_rank
+    
+    def reset_print_times(self):
+        self.print_times=False
 
     def __del__(self):
         # When the process exits, the process pool may have been closed. We should try
@@ -140,14 +151,20 @@ class DistDataLoader:
     def _request_next_batch(self):
         # TODO: sampling and aggregation. If there is a sampler pool, the job is submitted and done asynchronously by the sampler process. However, we do not use any sampler process for now.
         assert self.pool is None
+        start_time = time.time()
         next_data = self._next_data()
+        end_time = time.time()
         if next_data is None:
             return
         elif self.pool is not None:
             self.pool.submit_task(self.name, next_data)
         else:
+            start_time_2 = time.time()
             result = self.collate_fn(next_data)
+            end_time_2 = time.time()
             self.queue.append(result)
+        if self.print_times:
+            print(f"{host_name} {self.g_rank}: [DistDataLoader _request_nest_batch] Sampling: {end_time-start_time} sec, Aggregation time: {end_time_2-start_time_2} sec")
         self.num_pending += 1
 
     def _next_data(self):

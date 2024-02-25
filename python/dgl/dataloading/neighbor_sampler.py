@@ -214,7 +214,7 @@ class NeighborSampler(BlockSampler):
             seed_nodes = block.srcdata[NID]
             blocks.insert(0, block)
         if isinstance(g, DistGraph) and self.print_times:
-            print(f"{host_name} {g.rank()}: [sample_blocks] sampling_neighbors: {times[0]:.6f} sec, aggregation: {sum(aggregation_times):.6f} sec")
+            print(f"{host_name} {g.rank()}: [sample_blocks] Sampling: {times[0]:.6f} sec, Aggregation: {sum(aggregation_times):.6f} sec")
         return seed_nodes, output_nodes, blocks
 
 
